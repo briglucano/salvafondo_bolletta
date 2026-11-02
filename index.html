@@ -16,6 +16,7 @@
       --accent: #38bdf8;
       --accent-green: #4ade80;
       --accent-orange: #fb923c;
+      --accent-red: #ef4444;
       --text: #f8fafc;
       --text-muted: #94a3b8;
       --border: #334155;
@@ -36,6 +37,7 @@
     .btn:active { opacity: 0.7; }
     .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
     .btn-orange { background: var(--accent-orange); color: #0f172a; }
+    .btn-red { background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-red); color: var(--accent-red); margin-top: 15px; }
     .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .history-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
     .history-item:last-child { border-bottom: none; }
@@ -85,14 +87,15 @@
     <button type="button" class="btn btn-orange" id="btnPDF">📄 Scarica Report PDF</button>
   </div>
 
-  <!-- GESTIONE BACKUP (IMPORT / EXPORT) -->
+  <!-- GESTIONE BACKUP (IMPORT / EXPORT / RESET) -->
   <div class="card">
-    <div class="card-title">4. Backup Dati</div>
+    <div class="card-title">4. Backup e Gestione Dati</div>
     <div class="btn-group">
       <button type="button" class="btn btn-secondary" id="btnEsporta">📤 Esporta JSON</button>
       <button type="button" class="btn btn-secondary" id="btnImportaTrigger">📥 Importa JSON</button>
     </div>
     <input type="file" id="importFile" accept=".json" style="display: none;">
+    <button type="button" class="btn btn-red" id="btnReset">⚠️ Reset Totale Dati</button>
   </div>
 
   <script>
@@ -180,6 +183,7 @@
         const container = document.getElementById('listaStorico');
         if (!dati.storico || dati.storico.length === 0) {
           container.innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">Nessun mese nello storico.</p>';
+          if (chart) { chart.destroy(); chart = null; }
           return;
         }
 
@@ -293,7 +297,23 @@
         doc.save(`report_bolletta.pdf`);
       }
 
-      // Event Listeners espliciti per compatibilità iOS
+      function resetDati() {
+        if (confirm("⚠️ SEI SICURO?\nQuesto cancellerà permanentemente la lettura attuale e tutto lo storico salvato.")) {
+          if (confirm("Confermi definitivamente l'azzeramento totale?")) {
+            localStorage.removeItem('salvafondo_dati');
+            dati = {
+              costoKwh: 0.30,
+              kwhAttuali: 0,
+              ultimaLetturaAccantonata: 0,
+              storico: []
+            };
+            inizializza();
+            alert("Tutti i dati sono stati cancellati.");
+          }
+        }
+      }
+
+      // Event Listeners espliciti
       elCostoKwh.addEventListener('input', calcola);
       elKwhAttuali.addEventListener('input', calcola);
       document.getElementById('btnSalva').addEventListener('click', salvaLettura);
@@ -304,6 +324,7 @@
         document.getElementById('importFile').click();
       });
       document.getElementById('importFile').addEventListener('change', importaBackup);
+      document.getElementById('btnReset').addEventListener('click', resetDati);
 
       inizializza();
     });
