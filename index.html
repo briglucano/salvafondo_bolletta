@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Salvafondo Bolletta</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #38bdf8;
+      --accent-green: #4ade80;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 16px; max-width: 600px; margin: 0 auto; min-height: 100vh; }
+    h1 { font-size: 1.5rem; text-align: center; margin-bottom: 20px; color: var(--accent); }
+    .card { background: var(--card-bg); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+    .card-title { font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { font-size: 0.85rem; color: var(--text-muted); display: block; margin-bottom: 6px; }
+    input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: #fff; padding: 10px; border-radius: 8px; font-size: 1.1rem; }
+    input:focus { outline: none; border-color: var(--accent); }
+    .highlight-box { background: rgba(56, 189, 248, 0.1); border: 1px solid var(--accent); border-radius: 8px; padding: 12px; text-align: center; margin-top: 12px; }
+    .green-box { background: rgba(74, 222, 128, 0.1); border-color: var(--accent-green); }
+    .val-main { font-size: 1.8rem; font-weight: bold; color: #fff; }
+    .val-diff { font-size: 1.2rem; font-weight: bold; color: var(--accent-green); }
+    .btn { width: 100%; background: var(--accent); color: #0f172a; border: none; padding: 12px; font-weight: bold; font-size: 1rem; border-radius: 8px; cursor: pointer; margin-top: 12px; transition: opacity 0.2s; }
+    .btn:hover { opacity: 0.9; }
+    .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+    .history-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .history-item:last-child { border-bottom: none; }
+    canvas { margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <h1>⚡ Salvafondo Bolletta</h1>
+
+  <!-- CONFIGURAZIONE TARIFFA -->
+  <div class="card">
+    <div class="card-title">1. Tariffa Omnicomprensiva</div>
+    <label for="costoKwh">Costo Medio per kWh (€)</label>
+    <input type="number" id="costoKwh" step="0.01" value="0.30" oninput="calcola()">
+  </div>
+
+  <!-- INSERIMENTO LETTURA ATTUALE -->
+  <div class="card">
+    <div class="card-title" id="titoloMese">2. Lettura Mese Corrente</div>
+    <label for="kwhAttuali">Lettura Attuale Contatore (kWh)</label>
+    <input type="number" id="kwhAttuali" placeholder="Es. 45" oninput="calcola()">
+
+    <div class="highlight-box">
+      <div style="font-size:0.85rem; color:var(--text-muted)">Totale accumulato questo mese:</div>
+      <div class="val-main" id="totaleMese">0.00 €</div>
+    </div>
+
+    <div class="highlight-box green-box">
+      <div style="font-size:0.85rem; color:var(--text-muted)">Da accantonare oggi nel portafoglio:</div>
+      <div class="val-diff" id="daAccantonare">+0.00 €</div>
+    </div>
+
+    <button class="btn" onclick="salvaLettura()">💾 Salva Lettura Odierna</button>
+  </div>
+
+  <!-- CHIUSURA MESE -->
+  <div class="card">
+    <button class="btn btn-secondary" onclick="chiudiMese()">📁 Chiudi e Archivia Mese</button>
+  </div>
+
+  <!-- STORICO E GRAFICO -->
+  <div class="card">
+    <div class="card-title">3. Storico Mensile</div>
+    <div id="listaStorico">Nessun mese archiviato.</div>
+    <canvas id="chartBolletta"></canvas>
+  </div>
+
+  <script>
+    let dati = JSON.parse(localStorage.getItem('salvafondo_dati')) || {
+      costoKwh: 0.30,
+      kwhAttuali: 0,
+      ultimaLetturaAccantonata: 0,
+      storico: []
+    };
+
+    let chart = null;
+
+    function inizializza() {
+      document.getElementById('costoKwh').value = dati.costoKwh || 0.30;
+      document.getElementById('kwhAttuali').value = dati.kwhAttuali || '';
+      aggiornaTitoloMese();
+      calcola();
+      renderStorico();
+    }
+
+    function aggiornaTitoloMese() {
+      const meseCorrente = new Date().toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+      document.getElementById('titoloMese').innerText = `2. Mese Corrente (${meseCorrente})`;
+    }
+
+    function calcola() {
+      const costo = parseFloat(document.getElementById('costoKwh').value) || 0;
+      const kwh = parseFloat(document.getElementById('kwhAttuali').value) || 0;
+
+      dati.costoKwh = costo;
+      dati.kwhAttuali = kwh;
+
+      const totaleMese = kwh * costo;
+      const kwhDifferenza = Math.max(0, kwh - dati.ultimaLetturaAccantonata);
+      const diffAccantonamento = kwhDifferenza * costo;
+
+      document.getElementById('totaleMese').innerText = totaleMese.toFixed(2) + ' €';
+      document.getElementById('daAccantonare').innerText = '+' + diffAccantonamento.toFixed(2) + ' €';
+
+      localStorage.setItem('salvafondo_dati', JSON.stringify(dati));
+    }
+
+    function salvaLettura() {
+      dati.ultimaLetturaAccantonata = dati.kwhAttuali;
+      localStorage.setItem('salvafondo_dati', JSON.stringify(dati));
+      calcola();
+      alert('Lettura e accantonamento aggiornati con successo!');
+    }
+
+    function chiudiMese() {
+      if (dati.kwhAttuali === 0) {
+        alert('Non ci sono kWh registrati per questo mese.');
+        return;
+      }
+      
+      const meseNome = new Date().toLocaleDateString('it-IT', { month: 'short', year: 'numeric' });
+      const totaleFattura = dati.kwhAttuali * dati.costoKwh;
+
+      if (confirm(`Confermi la chiusura di ${meseNome} per un totale di ${totaleFattura.toFixed(2)} €?`)) {
+        dati.storico.push({
+          mese: meseNome,
+          kwh: dati.kwhAttuali,
+          totale: totaleFattura
+        });
+
+        // Azzeramento mese
+        dati.kwhAttuali = 0;
+        dati.ultimaLetturaAccantonata = 0;
+        document.getElementById('kwhAttuali').value = '';
+
+        localStorage.setItem('salvafondo_dati', JSON.stringify(dati));
+        calcola();
+        renderStorico();
+      }
+    }
+
+    function renderStorico() {
+      const container = document.getElementById('listaStorico');
+      if (dati.storico.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">Nessun mese nello storico.</p>';
+        return;
+      }
+
+      container.innerHTML = dati.storico.map(item => `
+        <div class="history-item">
+          <span><strong>${item.mese}</strong> (${item.kwh} kWh)</span>
+          <span style="color:var(--accent); font-weight:bold;">${item.totale.toFixed(2)} €</span>
+        </div>
+      `).join('');
+
+      renderGrafico();
+    }
+
+    function renderGrafico() {
+      const ctx = document.getElementById('chartBolletta').getContext('2d');
+      const labels = dati.storico.map(h => h.mese);
+      const valori = dati.storico.map(h => h.totale);
+
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Spesa (€)',
+            data: valori,
+            backgroundColor: '#38bdf8',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#94a3b8' }, grid: { display: false } },
+            y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }
+          }
+        }
+      });
+    }
+
+    inizializza();
+  </script>
+</body>
+</html>
