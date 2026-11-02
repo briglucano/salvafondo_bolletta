@@ -4,23 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Salvafondo Bolletta</title>
+  <!-- Libreria per il Grafico -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Librerie per il PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
   <style>
     :root {
       --bg: #0f172a;
       --card-bg: #1e293b;
       --accent: #38bdf8;
       --accent-green: #4ade80;
+      --accent-orange: #fb923c;
       --text: #f8fafc;
       --text-muted: #94a3b8;
       --border: #334155;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 16px; max-width: 600px; margin: 0 auto; min-height: 100vh; }
+    body { background: var(--bg); color: var(--text); padding: 16px; max-width: 650px; margin: 0 auto; min-height: 100vh; }
     h1 { font-size: 1.5rem; text-align: center; margin-bottom: 20px; color: var(--accent); }
     .card { background: var(--card-bg); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
     .card-title { font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     label { font-size: 0.85rem; color: var(--text-muted); display: block; margin-bottom: 6px; }
     input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: #fff; padding: 10px; border-radius: 8px; font-size: 1.1rem; }
     input:focus { outline: none; border-color: var(--accent); }
@@ -28,12 +32,14 @@
     .green-box { background: rgba(74, 222, 128, 0.1); border-color: var(--accent-green); }
     .val-main { font-size: 1.8rem; font-weight: bold; color: #fff; }
     .val-diff { font-size: 1.2rem; font-weight: bold; color: var(--accent-green); }
-    .btn { width: 100%; background: var(--accent); color: #0f172a; border: none; padding: 12px; font-weight: bold; font-size: 1rem; border-radius: 8px; cursor: pointer; margin-top: 12px; transition: opacity 0.2s; }
+    .btn { width: 100%; background: var(--accent); color: #0f172a; border: none; padding: 12px; font-weight: bold; font-size: 0.95rem; border-radius: 8px; cursor: pointer; margin-top: 10px; transition: opacity 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
     .btn:hover { opacity: 0.9; }
     .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+    .btn-orange { background: var(--accent-orange); color: #0f172a; }
+    .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .history-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
     .history-item:last-child { border-bottom: none; }
-    canvas { margin-top: 10px; }
+    canvas { margin-top: 15px; }
   </style>
 </head>
 <body>
@@ -76,6 +82,17 @@
     <div class="card-title">3. Storico Mensile</div>
     <div id="listaStorico">Nessun mese archiviato.</div>
     <canvas id="chartBolletta"></canvas>
+    <button class="btn btn-orange" onclick="esportaPDF()">📄 Scarica Report PDF</button>
+  </div>
+
+  <!-- GESTIONE BACKUP (IMPORT / EXPORT) -->
+  <div class="card">
+    <div class="card-title">4. Backup Dati</div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="esportaBackup()">📤 Esporta JSON</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">📥 Importa JSON</button>
+    </div>
+    <input type="file" id="importFile" accept=".json" style="display: none;" onchange="importaBackup(event)">
   </div>
 
   <script>
@@ -138,10 +155,10 @@
         dati.storico.push({
           mese: meseNome,
           kwh: dati.kwhAttuali,
+          costoKwh: dati.costoKwh,
           totale: totaleFattura
         });
 
-        // Azzeramento mese
         dati.kwhAttuali = 0;
         dati.ultimaLetturaAccantonata = 0;
         document.getElementById('kwhAttuali').value = '';
@@ -155,50 +172,4 @@
     function renderStorico() {
       const container = document.getElementById('listaStorico');
       if (dati.storico.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">Nessun mese nello storico.</p>';
-        return;
-      }
-
-      container.innerHTML = dati.storico.map(item => `
-        <div class="history-item">
-          <span><strong>${item.mese}</strong> (${item.kwh} kWh)</span>
-          <span style="color:var(--accent); font-weight:bold;">${item.totale.toFixed(2)} €</span>
-        </div>
-      `).join('');
-
-      renderGrafico();
-    }
-
-    function renderGrafico() {
-      const ctx = document.getElementById('chartBolletta').getContext('2d');
-      const labels = dati.storico.map(h => h.mese);
-      const valori = dati.storico.map(h => h.totale);
-
-      if (chart) chart.destroy();
-
-      chart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Spesa (€)',
-            data: valori,
-            backgroundColor: '#38bdf8',
-            borderRadius: 6
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { ticks: { color: '#94a3b8' }, grid: { display: false } },
-            y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }
-          }
-        }
-      });
-    }
-
-    inizializza();
-  </script>
-</body>
-</html>
+        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">Ness
